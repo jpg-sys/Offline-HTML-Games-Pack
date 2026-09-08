@@ -1,0 +1,45 @@
+name: Copy offline games to Cloudflare R2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  copy-games:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - name: Download the game repository on the GitHub runner
+        uses: actions/checkout@v4
+
+      - name: Upload all single-file games to R2
+        run: |
+          aws s3 sync offline "s3://${R2_BUCKET}" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --exclude "*" \
+            --include "*.html" \
+            --include "*.htm" \
+            --cache-control "public,max-age=31536000,immutable" \
+            --no-progress
+
+      - name: Allow the Wasmer site to fetch game files
+        run: |
+          aws s3api put-bucket-cors \
+            --bucket "${R2_BUCKET}" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --cors-configuration '{"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["GET","HEAD"],"AllowedOrigins":["https://frenchbarber.wasmer.app"],"ExposeHeaders":["Content-Length","Content-Range","ETag"],"MaxAgeSeconds":86400}]}'
+
+      - name: Show uploaded total
+        run: |
+          aws s3 ls "s3://${R2_BUCKET}" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            --recursive \
+            --summarize
