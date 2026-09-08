@@ -18,28 +18,28 @@ jobs:
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
     steps:
       - name: Download the game repository on the GitHub runner
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Check configuration and game files
+        run: |
+          test -n "${R2_ENDPOINT}" || { echo "::error::R2_ENDPOINT is missing"; exit 1; }
+          test -n "${R2_BUCKET}" || { echo "::error::R2_BUCKET is missing"; exit 1; }
+          test -d offline || { echo "::error::The offline game folder was not found"; exit 1; }
+          GAME_COUNT=$(find offline -maxdepth 1 -type f \( -name '*.html' -o -name '*.htm' \) | wc -l)
+          test "${GAME_COUNT}" -eq 300 || { echo "::error::Expected 300 games, found ${GAME_COUNT}"; exit 1; }
 
       - name: Upload all single-file games to R2
         run: |
-          aws s3 sync offline "s3://${R2_BUCKET}" \
+          aws s3 cp offline "s3://${R2_BUCKET}/" \
+            --recursive \
             --endpoint-url "${R2_ENDPOINT}" \
             --exclude "*" \
             --include "*.html" \
             --include "*.htm" \
             --cache-control "public,max-age=31536000,immutable" \
-            --no-progress
+            --no-progress \
+            --only-show-errors
 
-      - name: Allow the Wasmer site to fetch game files
+      - name: Finished
         run: |
-          aws s3api put-bucket-cors \
-            --bucket "${R2_BUCKET}" \
-            --endpoint-url "${R2_ENDPOINT}" \
-            --cors-configuration '{"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["GET","HEAD"],"AllowedOrigins":["https://frenchbarber.wasmer.app"],"ExposeHeaders":["Content-Length","Content-Range","ETag"],"MaxAgeSeconds":86400}]}'
-
-      - name: Show uploaded total
-        run: |
-          aws s3 ls "s3://${R2_BUCKET}" \
-            --endpoint-url "${R2_ENDPOINT}" \
-            --recursive \
-            --summarize
+          echo "Uploaded 300 game files to ${R2_BUCKET}."
